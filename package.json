@@ -1,0 +1,16 @@
+{
+	"name": "pi-agy-mode",
+	"version": "0.1.0",
+	"description": "Antigravity (agy) mode for pi: agy-style system prompt and tool names (view_file, run_command, manage_task, schedule, ...) for Gemini models, with native background tasks and timers",
+	"keywords": ["pi-package", "pi", "antigravity", "agy", "gemini"],
+	"license": "ISC",
+	"type": "module",
+	"pi": {
+		"extensions": ["./index.ts"]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-coding-agent": "*",
+		"typebox": "*"
+	},
+	"private": false
+}
