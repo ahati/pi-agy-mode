@@ -39,8 +39,9 @@ import { AgyScheduler } from "./schedule.ts";
 import {
 	activeAgyToolNames,
 	allAgyToolNames,
+	agyPrepareLoadout,
 	ensureCapabilityWrappers,
-	hiddenOriginals,
+	setAgyLoadout,
 	probeCapabilities,
 	type AgyCapabilities,
 } from "./wrappers.ts";
@@ -147,10 +148,13 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 			// First application: snapshot whatever the session normally exposes.
 			baseTools = current;
 		}
+		setAgyLoadout(agy, caps);
 		if (agy) {
-			const hidden = new Set([...hiddenOriginals(caps), ...allAgyToolNames()]);
-			const keep = current.filter((n) => !hidden.has(n));
-			pi.setActiveTools([...keep, ...activeAgyToolNames(caps)]);
+			// Wrapped originals STAY active (callable via ctx.executeTool); their
+			// declarations are omitted by agyPrepareLoadout while agy tools are added.
+			const merged = new Set(current);
+			for (const name of activeAgyToolNames(caps)) merged.add(name);
+			pi.setActiveTools([...merged]);
 		} else if (baseTools) {
 			const agyNames = new Set(allAgyToolNames());
 			pi.setActiveTools(baseTools.filter((n) => !agyNames.has(n)));
@@ -275,6 +279,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	// ------------------------------------------------------------------
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "view_file",
 		label: "view_file",
 		description:
@@ -315,6 +320,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "run_command",
 		label: "run_command",
 		description:
@@ -367,6 +373,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "write_to_file",
 		label: "write_to_file",
 		description:
@@ -416,6 +423,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "replace_file_content",
 		label: "replace_file_content",
 		description:
@@ -452,6 +460,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "ask_question",
 		label: "ask_question",
 		description:
@@ -520,6 +529,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "manage_task",
 		label: "manage_task",
 		description:
@@ -576,6 +586,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	});
 
 	pi.registerTool({
+		prepareLoadout: agyPrepareLoadout,
 		name: "schedule",
 		label: "schedule",
 		description:

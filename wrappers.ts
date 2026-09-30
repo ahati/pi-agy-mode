@@ -15,7 +15,7 @@
  */
 
 import { Type } from "typebox";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ToolLoadout, ToolLoadoutChanges } from "@earendil-works/pi-coding-agent";
 
 export interface AgyCapabilities {
 	webSearch: boolean;
@@ -46,6 +46,27 @@ interface CapabilityMapping {
 
 /** Already-registered capability wrappers (registerTool replaces, so guard). */
 const registered = new Set<string>();
+
+/**
+ * Loadout state for declaration hiding: in agy mode the wrapped originals
+ * (read/bash/edit/write, web_search, ...) stay ACTIVE — so they remain
+ * callable through ctx.executeTool() — while their declarations are omitted
+ * from requests via hiddenDeclarations (see agyPrepareLoadout).
+ */
+let loadoutState: { active: boolean; caps: AgyCapabilities } = {
+	active: false,
+	caps: { webSearch: false, fetchContent: false, steerSubagent: false, askUserQuestion: false },
+};
+
+export function setAgyLoadout(active: boolean, caps: AgyCapabilities): void {
+	loadoutState = { active, caps };
+}
+
+/** Attach to every agy wrapper: hides wrapped originals' declarations in agy mode. */
+export function agyPrepareLoadout(_loadout: ToolLoadout): ToolLoadoutChanges | undefined {
+	if (!loadoutState.active) return undefined;
+	return { hiddenDeclarations: hiddenOriginals(loadoutState.caps) };
+}
 
 export function probeCapabilities(pi: ExtensionAPI): AgyCapabilities {
 	const names = new Set(pi.getAllTools().map((tool) => tool.name));
@@ -124,6 +145,7 @@ const CAPABILITY_MAPPINGS: CapabilityMapping[] = [
 		originalTool: "web_search",
 		register: (pi) => {
 			pi.registerTool({
+				prepareLoadout: agyPrepareLoadout,
 				name: "search_web",
 				label: "search_web",
 				description:
@@ -147,6 +169,7 @@ const CAPABILITY_MAPPINGS: CapabilityMapping[] = [
 		originalTool: "fetch_content",
 		register: (pi) => {
 			pi.registerTool({
+				prepareLoadout: agyPrepareLoadout,
 				name: "read_url_content",
 				label: "read_url_content",
 				description:
@@ -169,6 +192,7 @@ const CAPABILITY_MAPPINGS: CapabilityMapping[] = [
 		originalTool: "steer_subagent",
 		register: (pi) => {
 			pi.registerTool({
+				prepareLoadout: agyPrepareLoadout,
 				name: "send_message",
 				label: "send_message",
 				description:
