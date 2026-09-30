@@ -1,9 +1,9 @@
 // Unit tests for agy-mode tasks.ts, schedule.ts, wrappers.ts (mock pi).
 // Run from /tmp/agycheck: node --experimental-strip-types test-units.ts
 import { rmSync } from "node:fs";
-import { AgyTaskRegistry, DEFAULT_LOG_BYTES } from "../tasks.ts";
-import { AgyScheduler, parseCron } from "../schedule.ts";
-import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities } from "../wrappers.ts";
+import { AgyTaskRegistry, DEFAULT_LOG_BYTES } from "./tasks.ts";
+import { AgyScheduler, parseCron } from "./schedule.ts";
+import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities } from "./wrappers.ts";
 
 const DIR = "/tmp/agy-test-tasks";
 rmSync(DIR, { recursive: true, force: true });
@@ -115,14 +115,14 @@ const registeredTools: string[] = [];
 const mockPi: any = {
 	registerTool: (t: any) => registeredTools.push(t.name),
 	getAllTools: () =>
-		["read", "bash", "edit", "write", "grep", "web_search", "fetch_content"].map((name) => ({ name })),
+		["read", "bash", "edit", "write", "grep", "web_search", "fetch_content", "askUserQuestion"].map((name) => ({ name })),
 };
 const caps = probeCapabilities(mockPi);
-check("probe", caps.webSearch && caps.fetchContent && !caps.steerSubagent);
+check("probe", caps.webSearch && caps.fetchContent && !caps.steerSubagent && caps.askUserQuestion);
 ensureCapabilityWrappers(mockPi, caps);
 check("wrappers registered for present caps", registeredTools.includes("search_web") && registeredTools.includes("read_url_content") && !registeredTools.includes("send_message"));
 const hidden = hiddenOriginals(caps);
-check("hides originals", hidden.includes("read") && hidden.includes("bash") && hidden.includes("web_search") && hidden.includes("fetch_content") && !hidden.includes("steer_subagent"));
+check("hides originals", hidden.includes("read") && hidden.includes("bash") && hidden.includes("web_search") && hidden.includes("fetch_content") && hidden.includes("askUserQuestion") && !hidden.includes("steer_subagent"));
 const active = activeAgyToolNames(caps);
 check("active agy names", active.includes("search_web") && active.includes("read_url_content") && active.includes("manage_task") && active.includes("schedule") && !active.includes("send_message"));
 ensureCapabilityWrappers(mockPi, caps); // idempotent

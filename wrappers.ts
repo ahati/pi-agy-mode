@@ -21,6 +21,7 @@ export interface AgyCapabilities {
 	webSearch: boolean;
 	fetchContent: boolean;
 	steerSubagent: boolean;
+	askUserQuestion: boolean;
 }
 
 /** agy core wrappers that delegate to pi built-ins; always available. */
@@ -52,6 +53,7 @@ export function probeCapabilities(pi: ExtensionAPI): AgyCapabilities {
 		webSearch: names.has("web_search"),
 		fetchContent: names.has("fetch_content"),
 		steerSubagent: names.has("steer_subagent"),
+		askUserQuestion: names.has("askUserQuestion"),
 	};
 }
 
@@ -75,6 +77,8 @@ export function hiddenOriginals(caps: AgyCapabilities): string[] {
 	if (registered.has("search_web") && caps.webSearch) hidden.push("web_search");
 	if (registered.has("read_url_content") && caps.fetchContent) hidden.push("fetch_content");
 	if (registered.has("send_message") && caps.steerSubagent) hidden.push("steer_subagent");
+	// ask_question (core, always registered) replaces askUserQuestion as the ask surface
+	if (caps.askUserQuestion) hidden.push("askUserQuestion");
 	return hidden;
 }
 

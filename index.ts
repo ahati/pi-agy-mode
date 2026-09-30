@@ -103,7 +103,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	/** Session-scoped services (created in session_start, disposed in session_shutdown). */
 	let taskRegistry: AgyTaskRegistry | null = null;
 	let scheduler: AgyScheduler | null = null;
-	let caps: AgyCapabilities = { webSearch: false, fetchContent: false, steerSubagent: false };
+	let caps: AgyCapabilities = { webSearch: false, fetchContent: false, steerSubagent: false, askUserQuestion: false };
 
 	const isAgyTarget = (model: ExtensionContext["model"]): boolean => {
 		if (mode === "always") return true;
@@ -418,6 +418,25 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		}),
 		async execute(_id, params, _signal, _onUpdate, toolCtx) {
 			const questions = params.questions ?? [];
+			const canDelegate = (toolCtx.tools ?? []).some((t) => t.name === "askUserQuestion");
+			if (canDelegate) {
+				// pi-ask-user-question installed: delegate for its richer UX, one call per question
+				const list = questions.length > 0
+					? questions
+					: [{ question: "What would you like to clarify?", options: undefined, is_multi_select: undefined }];
+				const lines: string[] = [];
+				for (const q of list) {
+					const outcome = await toolCtx.executeTool("askUserQuestion", {
+						question: q.question,
+						options: q.options,
+					});
+					if (outcome.isError) {
+						throw new Error(textOf(outcome.result.content) || "askUserQuestion failed");
+					}
+					lines.push(`Q: ${q.question}\nA: ${textOf(outcome.result.content)}`);
+				}
+				return { content: [{ type: "text", text: lines.join("\n\n") }], details: { answers: lines.length } };
+			}
 			if (!toolCtx.hasUI) {
 				return {
 					content: [
@@ -582,9 +601,10 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				const mapped = caps.webSearch ? "web_search ✓" : "web_search ✗";
 				const fetched = caps.fetchContent ? "fetch_content ✓" : "fetch_content ✗";
 				const steer = caps.steerSubagent ? "steer_subagent ✓" : "steer_subagent ✗";
+				const ask = caps.askUserQuestion ? "askUserQuestion ✓" : "askUserQuestion ✗";
 				return (
 					`agy-mode: ${mode} (persisted) — ${active ? "ACTIVE" : "inactive"} for ${model}\n` +
-					`mapped extensions: ${mapped}, ${fetched}, ${steer}\n` +
+					`mapped extensions: ${mapped}, ${fetched}, ${steer}, ${ask}\n` +
 					`active tools: ${pi.getActiveTools().join(", ")}`
 				);
 			};

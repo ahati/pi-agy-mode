@@ -25,6 +25,7 @@ Optional companion extensions (auto-detected if present — agy tools map onto t
 ```bash
 pi install npm:pi-web-access        # search_web -> web_search, read_url_content -> fetch_content
 pi install git:github.com/ahati/pi-subagents@master  # send_message -> steer_subagent
+pi install npm:pi-ask-user-question # ask_question delegates to askUserQuestion (richer UX)
 ```
 
 Set a global default mode in `~/.pi/agent/settings.json` (optional):
@@ -61,7 +62,7 @@ Aliases: `on`/`force` → always; `gemini`/`auto`/`default` → gemini-only; `ne
 | `run_command(CommandLine, Cwd?, IsDaemon?)` | pi `bash` | `IsDaemon=true` starts a **managed background task** (see below) |
 | `write_to_file(TargetFile, CodeContent, Overwrite?, Append?)` | pi `write` | errors if the file exists without `Overwrite=true` |
 | `replace_file_content(TargetFile, TargetContent, ReplacementContent)` | pi `edit` | exact-match single replacement |
-| `ask_question(questions[])` | pi dialogs | `select`/`input`; degrades gracefully without UI |
+| `ask_question(questions[])` | pi dialogs **or** pi-ask-user-question `askUserQuestion` | delegates per-question when that extension is installed; falls back to `select`/`input`; degrades gracefully without UI |
 | `manage_task(Action, TaskId?, Input?)` | **native** (this extension) | `list` / `status` / `kill` / **`send_input`** (stdin — not exposed by pi-background-tasks' `bg_*` tools) |
 | `schedule(DurationSeconds \| CronExpression, Prompt, ...)` | **native** (this extension) | one-shot timers with `TimerCondition` (`never`/`any`/`<sender-id>`) + 5-field cron with `MaxIterations`; fires inject `<scheduled-notification>` and wake the agent |
 | `search_web(query, domain?)` | pi-web-access `web_search` | when installed |
