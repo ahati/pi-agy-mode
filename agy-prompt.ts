@@ -1,62 +1,122 @@
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AgyCapabilities } from "./wrappers.ts";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+	getAgentDir,
+	loadSkills,
+	loadSkillsFromDir,
+	type ExtensionAPI,
+	type ExtensionContext,
+	type Skill,
+} from "@earendil-works/pi-coding-agent";
+import { AGY_CAPTURE_PROMPT } from "./agy-capture.ts";
 
 /**
- * Adapted Antigravity (agy) system prompt for pi.
- *
- * Modeled on the prompt captured in 20260930-215001_29e0f745.json
- * (Antigravity CLI 1.2.14, /v1internal:streamGenerateContent), with the
- * Antigravity-specific environment sections (skills paths, artifact dirs,
- * planning mode, slash commands, USER_REQUEST tags) rewritten to describe
- * pi's actual runtime so the model does not hallucinate an agy environment.
- *
- * Sections for capability-mapped tools (search_web, read_url_content,
- * send_message) appear only when the providing extension is installed.
+ * Builds the Antigravity system prompt: the verbatim CLI capture with only
+ * session-specific values substituted (OS, workspace, app data dir,
+ * conversation id) and the <skills> "Available skills" list filled with the
+ * session's pi skills — discovered the same way pi discovers them (default
+ * directories plus installed pi-package skills).
  */
-export function buildAgySystemPrompt(ctx: ExtensionContext, caps: AgyCapabilities): string {
-	const model = ctx.model;
-	const modelLabel = model ? `${model.name} (${model.id})` : "unknown";
-	const os = process.platform;
-	const date = new Date().toISOString().slice(0, 10);
+export function buildAgySystemPrompt(ctx: ExtensionContext, pi: ExtensionAPI): string {
+	const agentDir = getAgentDir();
+	let conversationId: string;
+	try {
+		conversationId = ctx.sessionManager.getSessionId();
+	} catch {
+		conversationId = "unknown";
+	}
 
-	const webTools = [
-		caps.webSearch ? "- search_web: web search with URL citations. Use it whenever current, external, or linked information could help." : null,
-		caps.fetchContent
-			? "- read_url_content: fetch a URL over HTTP and convert HTML to markdown (no JavaScript). Prefer it for documentation and static pages."
-			: null,
-		caps.steerSubagent
-			? "- send_message: steer a running subagent mid-run by its agent ID or memorable name. Do not use it to talk to the user."
-			: null,
-	].filter(Boolean) as string[];
+	const skills = collectSkills(ctx, pi, agentDir)
+		.filter((skill) => !skill.disableModelInvocation)
+		.map((skill) => `- ${skill.name} (${skill.filePath}): ${skill.description}`);
 
-	return `<identity>
-You are Antigravity, a powerful agentic AI coding assistant (running inside the pi agent harness in Antigravity-compatible mode).
-You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.
-The USER will send you requests, which you must always prioritize addressing.
-</identity>
-<user_information>
-The USER's OS is ${os}.
-Command Working Directory: ${ctx.cwd}
-Code relating to the user's requests should be written relative to the working directory above. Avoid writing project code files to tmp or the Desktop unless explicitly asked.
-Active model: ${modelLabel}
-Today's date: ${date}
-</user_information>
-<tool_guidelines>
-- view_file is how you read files. Output is line- and byte-limited; if truncated, call view_file again with StartLine set to continue where it stopped.
-- run_command is your primary tool for searching and exploring: use grep -rn, rg, find, ls, git, and test runners through it. It runs synchronously; for servers/watchers set IsDaemon=true so the command becomes a managed background task and you get the task id and log path back.
-- Background tasks notify you automatically when they exit via <background-task-notification>. Do not poll or sleep to wait for them; end your turn or continue other work.
-- manage_task manages background tasks: 'list', 'status' (recent output + log path), 'kill', and 'send_input' (write to a running task's stdin, e.g. answering a prompt from an interactive process).
-- schedule sets one-shot timers or recurring cron jobs. It returns immediately; end your turn to wait for the <scheduled-notification>. A command that is sure to terminate needs no timer.
-- write_to_file creates new files or fully replaces existing ones (Overwrite=true). It fails if the file exists and Overwrite is not set, to protect you from clobbering work.
-- replace_file_content is how you edit existing files. TargetContent must match the file EXACTLY, including whitespace and indentation, and must be unique in the file. Include a few surrounding lines when the target is short to guarantee uniqueness.
-- Prefer replace_file_content for small edits to existing files; use write_to_file with Overwrite=true only when rewriting most of the file.
-- Maintain documentation integrity: preserve existing comments and docstrings unrelated to your changes.
-${webTools.length > 0 ? `\n<web_tools>\n${webTools.join("\n")}\n</web_tools>` : ""}
-</tool_guidelines>
-<communication_style>
-- Keep your responses concise.
-- Format your responses in github-style markdown.
-- If you're unsure about the user's intent, ask for clarification rather than making assumptions (use ask_question when the choice is genuinely the user's to make).
-- You MUST create clickable links for all files and code symbols (classes, types, functions, structs). Use github style markdown links with the file:// scheme (e.g., [utils.py](file:///path/to/utils.py) or [\`ClassName\`](file:///path/to/utils.py#L10-L20)).
-</communication_style>`;
+	const skillsList = skills.length > 0 ? skills.join("\n") : "(no skills available)";
+
+	return AGY_CAPTURE_PROMPT.replaceAll("__AGY_OS__", process.platform)
+		.replaceAll("__AGY_WORKSPACE__", ctx.cwd)
+		.replaceAll("__AGY_CWD__", ctx.cwd)
+		.replaceAll("__AGY_APP_DATA_DIR__", agentDir)
+		.replaceAll("__AGY_CONVERSATION_ID__", conversationId)
+		.replaceAll("__AGY_SKILLS_LIST__", skillsList);
+}
+
+/** All skills pi would advertise for this session (defaults + installed pi packages). */
+function collectSkills(ctx: ExtensionContext, pi: ExtensionAPI, agentDir: string): Skill[] {
+	const byFile = new Map<string, Skill>();
+
+	// Default locations (~/.pi/agent/skills, project .pi/skills, .agents/skills, ...)
+	for (const skill of loadSkills({ cwd: ctx.cwd, agentDir, skillPaths: [], includeDefaults: true }).skills) {
+		byFile.set(skill.filePath, skill);
+	}
+
+	// Installed pi packages: npm:<pkg> -> <agentDir>/npm/node_modules/<pkg>,
+	// git:<host>/<org>/<repo> -> <agentDir>/git/<host>/<org>/<repo>.
+	// Skills come from the package manifest's pi.skills entries or the
+	// conventional <package>/skills directory. Per-package settings filters
+	// (e.g. { skills: [] }) are not applied here.
+	for (const pkg of installedPackages(agentDir, pi.getSettings())) {
+		const skillDirs = pkg.declaredSkills.length > 0
+			? pkg.declaredSkills.map((d) => join(pkg.dir, d))
+			: [join(pkg.dir, "skills")];
+		for (const dir of skillDirs) {
+			try {
+				for (const skill of loadSkillsFromDir({ dir, source: dir }).skills) {
+					byFile.set(skill.filePath, skill);
+				}
+			} catch {
+				// missing or unreadable directory — skip
+			}
+		}
+	}
+
+	return [...byFile.values()];
+}
+
+interface PackageLocation {
+	dir: string;
+	/** manifest pi.skills entries (non-glob paths); empty when unknown */
+	declaredSkills: string[];
+}
+
+function installedPackages(agentDir: string, settings: ReturnType<ExtensionAPI["getSettings"]>): PackageLocation[] {
+	const list = Array.isArray((settings as Record<string, unknown>).packages)
+		? ((settings as Record<string, unknown>).packages as unknown[])
+		: [];
+	const out: PackageLocation[] = [];
+	for (const entry of list) {
+		const source = typeof entry === "string" ? entry : (entry as { source?: unknown })?.source;
+		if (typeof source !== "string") continue;
+		let dir: string | undefined;
+		if (source.startsWith("npm:")) {
+			dir = join(agentDir, "npm", "node_modules", stripVersion(source.slice(4)));
+		} else if (source.startsWith("git:")) {
+			const match = /^git:([^/]+)\/([^/]+)\/([^/@]+)(@.*)?$/.exec(source);
+			if (match) dir = join(agentDir, "git", match[1]!, match[2]!, match[3]!);
+		} else {
+			continue; // local paths load in place, not from the agent dir
+		}
+		if (!dir) continue;
+
+		let declaredSkills: string[] = [];
+		try {
+			const manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8")) as {
+				pi?: { skills?: unknown };
+			};
+			if (Array.isArray(manifest.pi?.skills)) {
+				declaredSkills = (manifest.pi!.skills as unknown[]).filter(
+					(d): d is string => typeof d === "string" && !d.includes("*"),
+				);
+			}
+		} catch {
+			// no manifest — fall back to the conventional skills directory
+		}
+		out.push({ dir, declaredSkills });
+	}
+	return out;
+}
+
+function stripVersion(name: string): string {
+	// "@scope/name@1.2.3" -> "@scope/name"; "name@1.2.3" -> "name"
+	const at = name.lastIndexOf("@");
+	return at > 0 ? name.slice(0, at) : name;
 }

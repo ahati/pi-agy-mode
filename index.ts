@@ -29,8 +29,9 @@
  * (or add via --extension ./agy-mode).
  */
 
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { buildAgySystemPrompt } from "./agy-prompt.ts";
 import { AgyTaskRegistry, DEFAULT_LOG_BYTES, taskDisplayName } from "./tasks.ts";
@@ -64,6 +65,30 @@ const MODE_ENTRY_TYPE = "agy-mode";
 
 function parseAgyMode(input: string): AgyMode | undefined {
 	return MODE_ALIASES[input.trim().toLowerCase()];
+}
+
+/** Durable, cross-session persistence for /agy-mode (last explicit choice). */
+const STATE_FILE = join(getAgentDir(), "agy-mode.json");
+
+function readGlobalMode(): AgyMode | undefined {
+	try {
+		const parsed = JSON.parse(readFileSync(STATE_FILE, "utf-8")) as { mode?: unknown };
+		if (typeof parsed.mode === "string" && AGY_MODES.includes(parsed.mode as AgyMode)) {
+			return parsed.mode as AgyMode;
+		}
+	} catch {
+		// missing or unreadable file — no persisted choice
+	}
+	return undefined;
+}
+
+function writeGlobalMode(mode: AgyMode): void {
+	try {
+		mkdirSync(getAgentDir(), { recursive: true });
+		writeFileSync(STATE_FILE, `${JSON.stringify({ mode }, null, 2)}\n`, "utf-8");
+	} catch {
+		// read-only agent dir — session persistence still applies
+	}
 }
 
 function quoteShell(path: string): string {
@@ -100,7 +125,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	};
 
 	const restorePersistedMode = (ctx: ExtensionContext): void => {
-		mode = readInitialMode();
+		mode = readGlobalMode() ?? readInitialMode();
 		for (const entry of ctx.sessionManager.getBranch()) {
 			if (entry.type === "custom" && entry.customType === MODE_ENTRY_TYPE) {
 				const saved = (entry.data as { mode?: unknown } | undefined)?.mode;
@@ -187,7 +212,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		if (!isAgyTarget(ctx.model)) {
 			return undefined;
 		}
-		return { systemPrompt: buildAgySystemPrompt(ctx, caps) };
+		return { systemPrompt: buildAgySystemPrompt(ctx, pi) };
 	});
 
 	// ------------------------------------------------------------------
@@ -558,7 +583,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				const fetched = caps.fetchContent ? "fetch_content ✓" : "fetch_content ✗";
 				const steer = caps.steerSubagent ? "steer_subagent ✓" : "steer_subagent ✗";
 				return (
-					`agy-mode: ${mode} — ${active ? "ACTIVE" : "inactive"} for ${model}\n` +
+					`agy-mode: ${mode} (persisted) — ${active ? "ACTIVE" : "inactive"} for ${model}\n` +
 					`mapped extensions: ${mapped}, ${fetched}, ${steer}\n` +
 					`active tools: ${pi.getActiveTools().join(", ")}`
 				);
@@ -577,6 +602,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 			}
 
 			mode = parsed;
+			writeGlobalMode(parsed);
 			pi.appendEntry(MODE_ENTRY_TYPE, { mode: parsed });
 			refreshCapabilities();
 			applyToolMode(ctx.model);
