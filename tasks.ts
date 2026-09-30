@@ -58,6 +58,8 @@ export interface AgyTaskRegistryOptions {
 	) => void;
 	/** Extra hook (agy-mode): called on terminal state with the task id as senderId. */
 	onTerminal?: (task: AgyTaskSnapshot) => void;
+	/** Called after every task state change (spawn, exit, kill) — drives UI docks. */
+	onChange?: () => void;
 }
 
 export class AgyTaskRegistry {
@@ -126,6 +128,7 @@ export class AgyTaskRegistry {
 		});
 
 		this.pruneOldTasks();
+		this.opts.onChange?.();
 		return this.snapshot(task);
 	}
 
@@ -308,6 +311,7 @@ export class AgyTaskRegistry {
 			clearTimeout(task.killEscalationTimer);
 			task.killEscalationTimer = null;
 		}
+		this.opts.onChange?.();
 		if (task.notified || this.shuttingDown) {
 			this.opts.onTerminal?.(this.snapshot(task));
 			return;

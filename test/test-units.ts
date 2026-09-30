@@ -16,8 +16,10 @@ function check(name: string, cond: boolean, extra = "") {
 
 // ---- TaskRegistry -----------------------------------------------------
 const notifications: Array<{ content: string; senderId: string; details?: any }> = [];
+let changeEvents = 0;
 const registry = new AgyTaskRegistry({
 	outputDir: DIR,
+	onChange: () => { changeEvents++; },
 	sendCompletionNotification: (message, options) => {
 		notifications.push({ content: message.content, senderId: message.details.id, details: message.details });
 		check("notification options", options.triggerTurn === true && options.deliverAs === "followUp");
@@ -127,6 +129,8 @@ const active = activeAgyToolNames(caps);
 check("active agy names", active.includes("search_web") && active.includes("read_url_content") && active.includes("manage_task") && active.includes("schedule") && !active.includes("send_message"));
 ensureCapabilityWrappers(mockPi, caps); // idempotent
 check("idempotent registration", registeredTools.filter((n) => n === "search_web").length === 1);
+
+check("onChange fired on spawn+exit", changeEvents >= 2, `n=${changeEvents}`);
 
 // cleanup
 await registry.disposeAll();

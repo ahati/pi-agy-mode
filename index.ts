@@ -103,6 +103,10 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	/** Session-scoped services (created in session_start, disposed in session_shutdown). */
 	let taskRegistry: AgyTaskRegistry | null = null;
 	let scheduler: AgyScheduler | null = null;
+	/** Footer/status dock state for background tasks (pi-background-tasks-style). */
+	let uiCtx: ExtensionContext | null = null;
+	let statusTimer: ReturnType<typeof setInterval> | null = null;
+	const STATUS_KEY = "agy-tasks";
 	let caps: AgyCapabilities = { webSearch: false, fetchContent: false, steerSubagent: false, askUserQuestion: false };
 
 	const isAgyTarget = (model: ExtensionContext["model"]): boolean => {
@@ -177,6 +181,8 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 			}
 		};
 
+		uiCtx = ctx;
+
 		taskRegistry = new AgyTaskRegistry({
 			outputDir: join(ctx.cwd, ".pi", "agy-tasks"),
 			sendCompletionNotification: (message, options) => {
@@ -185,7 +191,12 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 			onTerminal: (task) => {
 				scheduler?.cancelOnNotification(task.id);
 			},
+			onChange: () => {
+				refreshTaskStatus();
+				ensureStatusTimer();
+			},
 		});
+		refreshTaskStatus();
 		scheduler = new AgyScheduler((content, senderId) => {
 			void notify("agy-schedule-notification", content, senderId);
 		});
@@ -199,6 +210,9 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		scheduler?.cancelAll();
 		taskRegistry = null;
 		scheduler = null;
+		stopStatusTimer();
+		setStatusSafe(undefined);
+		uiCtx = null;
 	});
 
 	pi.on("model_select", (event) => {
@@ -214,6 +228,47 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		}
 		return { systemPrompt: buildAgySystemPrompt(ctx, pi) };
 	});
+
+	// ------------------------------------------------------------------
+	// Background-task status dock (footer/status bar)
+	// ------------------------------------------------------------------
+
+	function setStatusSafe(text: string | undefined): void {
+		try {
+			uiCtx?.ui.setStatus(STATUS_KEY, text);
+		} catch {
+			// no interactive UI (print/JSON modes) — ignore
+		}
+	}
+
+	function refreshTaskStatus(): void {
+		const tasks = taskRegistry?.list() ?? [];
+		const running = tasks.filter((task) => task.status === "running");
+		if (running.length === 0) {
+			setStatusSafe(undefined);
+			stopStatusTimer();
+			return;
+		}
+		const text =
+			`⬢ agy ${running.length} task${running.length > 1 ? "s" : ""}: ` +
+			running
+				.map((task) => `${task.id} ${task.name} (${formatDuration(Date.now() - task.startedAt)})`)
+				.join(" · ");
+		setStatusSafe(text);
+	}
+
+	function ensureStatusTimer(): void {
+		if (statusTimer) return;
+		statusTimer = setInterval(refreshTaskStatus, 2_000);
+		statusTimer.unref?.();
+	}
+
+	function stopStatusTimer(): void {
+		if (statusTimer) {
+			clearInterval(statusTimer);
+			statusTimer = null;
+		}
+	}
 
 	// ------------------------------------------------------------------
 	// Wrapper tools (agy name -> pi built-in)
