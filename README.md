@@ -43,11 +43,16 @@ Set a global default mode in `~/.pi/agent/settings.json` (optional):
 | `/agy-mode off` | Never apply; restores pi's normal prompt and tools |
 
 Aliases: `on`/`force` → always; `gemini`/`auto`/`default` → gemini-only; `never`/`disabled` → off.
-The choice is persisted in the session (survives `/reload` and resume).
+
+**Persistence** (highest precedence first):
+1. Per-session entry — set via `/agy-mode` in the current session (survives `/reload` and resume)
+2. `~/.pi/agent/agy-mode.json` — your last explicit `/agy-mode` choice, applied to all future sessions
+3. `settings.json` `"agyMode"` key — manual default
+4. Built-in default: `gemini-only`
 
 ## What you get
 
-- **Antigravity-style system prompt** (`<identity>`, `<user_information>`, `<tool_guidelines>`, `<communication_style>`), adapted from the capture with agy-specific environment sections rewritten for pi, and capability-aware: web/subagent sections appear only when the providing extension is installed.
+- **Verbatim Antigravity system prompt** — the exact CLI 1.2.14 capture (`agy-capture.ts`). Only session-specific values are substituted (OS, workspace/cwd, app data directory, conversation id) and the `<skills>` "Available skills" list is filled with the session's **pi skills** (discovered via pi's `loadSkills` plus installed pi-package skill directories). Three sections describing Antigravity product systems pi does not have are omitted: `<slash_commands>`, `<planning_mode>`, `<planning_mode_artifacts>`. Everything else is byte-for-byte from the capture.
 - **agy-named tools** (originals hidden from the model in agy mode):
 
 | agy tool | Delegates to | Notes |
