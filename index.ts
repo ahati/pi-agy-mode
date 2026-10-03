@@ -659,8 +659,16 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	// ------------------------------------------------------------------
 
 	pi.registerCommand("agy-mode", {
-		description: "Show status or set agy mode: /agy-mode always | gemini-only | off",
+		description: "Show selector or set agy mode: /agy-mode always | gemini-only | off",
 		handler: async (args, ctx) => {
+			const applyMode = (parsed: AgyMode) => {
+				mode = parsed;
+				writeGlobalMode(parsed);
+				pi.appendEntry(MODE_ENTRY_TYPE, { mode: parsed });
+				refreshCapabilities();
+				applyToolMode(ctx.model);
+			};
+
 			const statusLine = () => {
 				const model = ctx.model ? `${ctx.model.name} (${ctx.model.id})` : "none";
 				const active = isAgyTarget(ctx.model);
@@ -677,6 +685,24 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 
 			const requested = args.trim();
 			if (!requested) {
+				if (ctx.hasUI) {
+					// Multiple-choice selector; the active mode gets a tick mark.
+					const modes: AgyMode[] = ["always", "gemini-only", "off"];
+					const options = modes.map((m) => (m === mode ? `✓ ${m}` : m));
+					const picked = await ctx.ui.select("Select agy mode", options);
+					if (picked === undefined) {
+						return; // dismissed — no change
+					}
+					const index = options.indexOf(picked);
+					const parsed = index >= 0 ? modes[index] : undefined;
+					if (!parsed || parsed === mode) {
+						ctx.ui.notify(`agy-mode: unchanged (${mode})`, "info");
+						return;
+					}
+					applyMode(parsed);
+					ctx.ui.notify(statusLine(), "info");
+					return;
+				}
 				ctx.ui.notify(statusLine(), "info");
 				return;
 			}
@@ -687,11 +713,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				return;
 			}
 
-			mode = parsed;
-			writeGlobalMode(parsed);
-			pi.appendEntry(MODE_ENTRY_TYPE, { mode: parsed });
-			refreshCapabilities();
-			applyToolMode(ctx.model);
+			applyMode(parsed);
 			ctx.ui.notify(statusLine(), "info");
 		},
 	});
