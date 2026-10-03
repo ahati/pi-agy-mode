@@ -54,6 +54,8 @@ Aliases: `on`/`force` → always; `gemini`/`auto`/`default` → gemini-only; `ne
 ## What you get
 
 - **Verbatim Antigravity system prompt** — the exact CLI 1.2.14 capture (`agy-capture.ts`). Only session-specific values are substituted (OS, workspace/cwd, app data directory, conversation id) and the `<skills>` "Available skills" list is filled with the session's **pi skills** (discovered via pi's `loadSkills` plus installed pi-package skill directories). Three sections describing Antigravity product systems pi does not have are omitted: `<slash_commands>`, `<planning_mode>`, `<planning_mode_artifacts>`. Everything else is byte-for-byte from the capture.
+
+One section is **added** from agy 1.2.16's planning artifacts (absent in the 1.2.14 capture): `<task_list>` — the `task.md` TODO-list convention with `[ ]` / `[/]` (in-progress, agy's custom notation) / `[x]` checkboxes, written under the brain directory as a living document.
 - **agy-named tools** (originals hidden from the model in agy mode):
 
 | agy tool | Delegates to | Notes |

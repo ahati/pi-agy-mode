@@ -32,12 +32,33 @@ export function buildAgySystemPrompt(ctx: ExtensionContext, pi: ExtensionAPI): s
 
 	const skillsList = skills.length > 0 ? skills.join("\n") : "(no skills available)";
 
+	// Task-list convention from agy 1.2.16's planning artifacts (task.md with
+	// the custom [/] in-progress notation). Placeholders <appDataDir> /
+	// <conversation-id> are kept literal, exactly like the captured prompt —
+	// the model composes them from <user_information>.
+	const taskList = `<task_list>
+When working on an approved plan or a multi-step task, organize your work with a TODO list artifact.
+
+# Tasks
+Path: <appDataDir>/brain/<conversation-id>/task.md
+
+**Purpose**: A TODO list to organize your work during execution. Break down complex tasks into component-level items and track progress as a living document.
+
+**Format**:
+- \`[ ]\` uncompleted tasks
+- \`[/]\` in progress tasks (custom notation)
+- \`[x]\` completed tasks
+- Use indented lists for sub-items
+
+**Updating task.md**: Mark items as \`[/]\` when starting work on them, and \`[x]\` when completed. Update task.md as you make progress through your checklist.
+</task_list>`;
+
 	return AGY_CAPTURE_PROMPT.replaceAll("__AGY_OS__", process.platform)
 		.replaceAll("__AGY_WORKSPACE__", ctx.cwd)
 		.replaceAll("__AGY_CWD__", ctx.cwd)
 		.replaceAll("__AGY_APP_DATA_DIR__", agentDir)
 		.replaceAll("__AGY_CONVERSATION_ID__", conversationId)
-		.replaceAll("__AGY_SKILLS_LIST__", skillsList);
+		.replaceAll("__AGY_SKILLS_LIST__", skillsList) + "\n" + taskList;
 }
 
 /** All skills pi would advertise for this session (defaults + installed pi packages). */
