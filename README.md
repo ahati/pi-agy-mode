@@ -89,8 +89,22 @@ When active, the model sees **only** agy tool names — pi's `read`/`bash`/`edit
 
 ## Development
 
+One-time dev setup (links pi's bundled modules; `node_modules/` is gitignored):
+
 ```bash
-node --experimental-strip-types test/test-units.ts
+PI=$(dirname $(dirname $(readlink -f $(which pi))))/lib/node_modules/@earendil-works/pi-coding-agent
+mkdir -p node_modules/@earendil-works
+ln -sfn $PI/node_modules/typebox node_modules/typebox
+ln -sfn $PI node_modules/@earendil-works/pi-coding-agent
+ln -sfn $PI/node_modules/@types/node node_modules/@types/node
+```
+
+Then:
+
+```bash
+node --experimental-strip-types test/test-units.ts   # unit tests
+node --experimental-strip-types test/test-command.ts # command/mode/persistence tests
+npx tsc -p tsconfig.json                             # strict typecheck (sources)
 ```
 
 ## License

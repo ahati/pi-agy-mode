@@ -1,9 +1,9 @@
 // Unit tests for agy-mode tasks.ts, schedule.ts, wrappers.ts (mock pi).
 // Run from /tmp/agycheck: node --experimental-strip-types test-units.ts
 import { rmSync } from "node:fs";
-import { AgyTaskRegistry, DEFAULT_LOG_BYTES } from "./tasks.ts";
-import { AgyScheduler, parseCron } from "./schedule.ts";
-import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities } from "./wrappers.ts";
+import { AgyTaskRegistry, DEFAULT_LOG_BYTES } from "../tasks.ts";
+import { AgyScheduler, parseCron } from "../schedule.ts";
+import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities } from "../wrappers.ts";
 
 const DIR = "/tmp/agy-test-tasks";
 rmSync(DIR, { recursive: true, force: true });

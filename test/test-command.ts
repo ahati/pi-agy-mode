@@ -1,6 +1,6 @@
 // Headless behavioral test for agy-mode using a mock ExtensionAPI.
 // Run from /tmp/agycheck: node --experimental-strip-types test-command.ts
-const mod = await import("./index.ts");
+const mod = await import("../index.ts");
 const factory = mod.default;
 
 let activeTools: string[] = ["read", "bash", "edit", "write", "grep", "web_search", "fetch_content", "steer_subagent", "askUserQuestion"];
