@@ -36,11 +36,13 @@ export function buildAgySystemPrompt(ctx: ExtensionContext, pi: ExtensionAPI): s
 	// the custom [/] in-progress notation). Placeholders <appDataDir> /
 	// <conversation-id> are kept literal, exactly like the captured prompt —
 	// the model composes them from <user_information>.
+	const tasksPath = `${ctx.cwd}/.pi/${conversationId}/tasks.md`;
+
 	const taskList = `<task_list>
 When working on an approved plan or a multi-step task, organize your work with a TODO list artifact.
 
 # Tasks
-Path: <appDataDir>/brain/<conversation-id>/task.md
+Path: ${tasksPath}
 
 **Purpose**: A TODO list to organize your work during execution. Break down complex tasks into component-level items and track progress as a living document.
 

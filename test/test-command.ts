@@ -44,7 +44,7 @@ const makeCtx = (modelId: string | undefined, branch: any[] = []) => ({
 			return uiSelectReply.value;
 		},
 	},
-	sessionManager: { getBranch: () => branch },
+	sessionManager: { getBranch: () => branch, getSessionId: () => "sess-123" },
 });
 
 let failures = 0;
@@ -88,7 +88,7 @@ const result: any = await handlers["before_agent_start"](
 );
 console.log("prompt replaced in always mode:", !!result?.systemPrompt, "| identity verbatim:", result?.systemPrompt?.startsWith("<identity>\nYou are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team"));
 if (!result?.systemPrompt?.startsWith("<identity>")) throw new Error("prompt not forced in always mode");
-check("task_list section present", result.systemPrompt.includes("<task_list>") && result.systemPrompt.includes("[/]` in progress tasks") && result.systemPrompt.includes("task.md"));
+check("task_list section present", result.systemPrompt.includes("<task_list>") && result.systemPrompt.includes("[/]` in progress tasks") && result.systemPrompt.includes("/tmp/.pi/sess-123/tasks.md"));
 
 // /agy-mode off -> restores base tools
 await commandHandler!("off", makeCtx("zai/glm-5.2", branch));
