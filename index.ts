@@ -30,7 +30,9 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { homedir } from "node:os";
+import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { AGY_BANNER } from "./banner-art.ts";
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -251,17 +253,34 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	// Banner ("Antigravity-Mode" header) + mode indicator in the status bar
 	// ------------------------------------------------------------------
 
-	function makeAntigravityHeader(theme: ExtensionContext["ui"]["theme"]) {
-		const pad = (s: string, width: number) => {
-			const start = Math.max(0, Math.floor((width - visibleWidth(s)) / 2));
-			return " ".repeat(start) + s;
-		};
+	// Verbatim Antigravity CLI banner (see banner-art.ts): wing art with
+	// per-character truecolor gradient + info column, like the real `agy` startup.
+	function makeAntigravityHeader(
+		_theme: ExtensionContext["ui"]["theme"],
+		info: { model: string; mode: AgyMode; cwd: string },
+	) {
+		const home = homedir();
+		const cwdShort = info.cwd.startsWith(home) ? `~${info.cwd.slice(home.length)}` : info.cwd;
+		const infoLines: string[] = [
+			`${AGY_BANNER.titleColor}Antigravity-Mode${AGY_BANNER.reset}`,
+			`${info.model} (${info.mode})`,
+			`${AGY_BANNER.dimColor}${cwdShort || info.cwd}${AGY_BANNER.reset}`,
+			`${AGY_BANNER.dimColor}pi-agy-mode · agy-compatible surface${AGY_BANNER.reset}`,
+		];
 		return {
 			invalidate() {},
 			render(width: number): string[] {
-				const title = theme.fg("accent", "⬢ Antigravity-Mode");
-				const sub = theme.fg("dim", "Antigravity-compatible agent surface · /agy-mode to configure");
-				return [pad(title, width), pad(sub, width), ""];
+				if (width < 52) return [`${AGY_BANNER.titleColor}⬢ Antigravity-Mode${AGY_BANNER.reset}`];
+				const rows = AGY_BANNER.artLines.map((art, i) => {
+					const col = AGY_BANNER.columns[i] ?? 3;
+					const raw = infoLines[i] ?? "";
+					const right = raw ? truncateToWidth(raw, Math.max(8, width - AGY_BANNER.infoCol), "…") : "";
+					const artWidth = visibleWidth(art);
+					const pad = " ".repeat(Math.max(1, AGY_BANNER.infoCol - col - artWidth));
+					return `${AGY_BANNER.reset}\x1b[${col}G${art}${pad}${right}`;
+				});
+				const sep = `${AGY_BANNER.sepColor}${"─".repeat(Math.min(width, 100))}${AGY_BANNER.reset}`;
+				return [...rows, sep];
 			},
 		};
 	}
@@ -283,7 +302,13 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				headerTimer = null;
 				if (generation !== headerGeneration || !uiCtx) return;
 				try {
-					ctx.ui.setHeader(() => makeAntigravityHeader(ctx.ui.theme));
+					ctx.ui.setHeader(() =>
+						makeAntigravityHeader(ctx.ui.theme, {
+							model: ctx.model?.name ?? "unknown model",
+							mode,
+							cwd: ctx.cwd,
+						}),
+					);
 					headerOwnedByAgy = true;
 				} catch {
 					// no interactive UI

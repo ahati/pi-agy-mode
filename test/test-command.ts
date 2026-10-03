@@ -65,6 +65,15 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 await handlers["session_start"]({ type: "session_start" }, makeCtx("zai/glm-5.2", branch));
 await sleep(60); // banner applies via deferred timer
 check("banner set when agy active", headerCalls.at(-1) instanceof Function, `n=${headerCalls.length}`);
+{
+	const comp = (headerCalls.at(-1) as Function)(undefined, { model: "GLM-5.3-Flash", mode: "always", cwd: "/tmp" });
+	const rows = comp.render(100);
+	const plain = rows.map((r) => r.replace(/\x1b\[[0-9;]*m/g, ""));
+	check("banner renders verbatim art", plain[0]!.includes("▄▀▀▄") && plain.join("").includes("Antigravity-Mode"), JSON.stringify(plain[0]));
+	const joined = plain.join("\n");
+	check("banner info column styled", joined.includes("zai/glm-5.2 (always)") && joined.includes("/tmp") && joined.includes("pi-agy-mode"), JSON.stringify(plain));
+	check("banner separator present", rows.at(-1)!.includes("─"));
+}
 check("mode status set when agy active", statusCalls.some(([k, v]) => k === "agy-mode" && v?.includes("Antigravity-Mode (always)")));
 console.log("after session_start (always, non-gemini):", activeTools.join(","));
 if (!activeTools.includes("view_file")) throw new Error("always mode failed");

@@ -87,9 +87,12 @@ Running tasks show in the status bar while any exist (pi-background-tasks-style 
 
 While agy mode is **active** (in TUI sessions):
 
-- The startup banner is replaced with a centered **⬢ Antigravity-Mode** header
-  (deferred so it composes over theme extensions like pi-claude-style-tui;
-  the previous header returns on the next session start after deactivating)
+- The startup banner is replaced with the **real Antigravity CLI banner** — the
+  wing art reproduced byte-for-byte (per-character truecolor gradient extracted
+  from a live `agy` render) with an info column showing the session model,
+  mode and working directory, plus the separator line (deferred so it composes
+  over theme extensions like pi-claude-style-tui; the previous header returns
+  on the next session start after deactivating)
 - The status bar shows **⬢ Antigravity-Mode (mode)** on the same row as the
   context/cost items; it clears when the mode is inactive
 
