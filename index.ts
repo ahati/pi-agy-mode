@@ -30,6 +30,7 @@
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -108,6 +109,11 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	let uiCtx: ExtensionContext | null = null;
 	let statusTimer: ReturnType<typeof setInterval> | null = null;
 	const STATUS_KEY = "agy-tasks";
+	/** Startup banner + mode indicator state. */
+	let headerTimer: ReturnType<typeof setTimeout> | null = null;
+	let headerGeneration = 0;
+	let headerOwnedByAgy = false;
+	const MODE_STATUS_KEY = "agy-mode";
 	let caps: AgyCapabilities = { webSearch: false, fetchContent: false, steerSubagent: false, askUserQuestion: false };
 
 	const isAgyTarget = (model: ExtensionContext["model"]): boolean => {
@@ -141,7 +147,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		}
 	};
 
-	const applyToolMode = (model: ExtensionContext["model"]) => {
+	const applyToolMode = (model: ExtensionContext["model"], ctx?: ExtensionContext) => {
 		const agy = isAgyTarget(model);
 		const current = pi.getActiveTools();
 		if (baseTools === null) {
@@ -158,6 +164,10 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		} else if (baseTools) {
 			const agyNames = new Set(allAgyToolNames());
 			pi.setActiveTools(baseTools.filter((n) => !agyNames.has(n)));
+		}
+		if (ctx) {
+			refreshModeStatus(ctx, agy);
+			applyHeaderMode(ctx, agy);
 		}
 	};
 
@@ -206,7 +216,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		});
 
 		refreshCapabilities();
-		applyToolMode(ctx.model);
+		applyToolMode(ctx.model, ctx);
 	});
 
 	pi.on("session_shutdown", () => {
@@ -216,22 +226,87 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		scheduler = null;
 		stopStatusTimer();
 		setStatusSafe(undefined);
+		if (headerTimer) {
+			clearTimeout(headerTimer);
+			headerTimer = null;
+		}
 		uiCtx = null;
 	});
 
-	pi.on("model_select", (event) => {
+	pi.on("model_select", (event, ctx) => {
 		refreshCapabilities();
-		applyToolMode(event.model);
+		applyToolMode(event.model, ctx);
 	});
 
 	pi.on("before_agent_start", async (_event, ctx) => {
 		refreshCapabilities(); // other extensions may have registered tools since start
-		applyToolMode(ctx.model);
+		applyToolMode(ctx.model, ctx);
 		if (!isAgyTarget(ctx.model)) {
 			return undefined;
 		}
 		return { systemPrompt: buildAgySystemPrompt(ctx, pi) };
 	});
+
+	// ------------------------------------------------------------------
+	// Banner ("Antigravity-Mode" header) + mode indicator in the status bar
+	// ------------------------------------------------------------------
+
+	function makeAntigravityHeader(theme: ExtensionContext["ui"]["theme"]) {
+		const pad = (s: string, width: number) => {
+			const start = Math.max(0, Math.floor((width - visibleWidth(s)) / 2));
+			return " ".repeat(start) + s;
+		};
+		return {
+			invalidate() {},
+			render(width: number): string[] {
+				const title = theme.fg("accent", "⬢ Antigravity-Mode");
+				const sub = theme.fg("dim", "Antigravity-compatible agent surface · /agy-mode to configure");
+				return [pad(title, width), pad(sub, width), ""];
+			},
+		};
+	}
+
+	/**
+	 * Show the Antigravity-Mode banner while agy mode is active. Deferred so it
+	 * wins over other extensions' deferred session headers (e.g. claude-style
+	 * TUI); when inactive we only clear the header if we own it.
+	 */
+	function applyHeaderMode(ctx: ExtensionContext, agy: boolean): void {
+		if (ctx.mode !== "tui") return;
+		if (headerTimer) {
+			clearTimeout(headerTimer);
+			headerTimer = null;
+		}
+		if (agy) {
+			const generation = ++headerGeneration;
+			headerTimer = setTimeout(() => {
+				headerTimer = null;
+				if (generation !== headerGeneration || !uiCtx) return;
+				try {
+					ctx.ui.setHeader(() => makeAntigravityHeader(ctx.ui.theme));
+					headerOwnedByAgy = true;
+				} catch {
+					// no interactive UI
+				}
+			}, 30);
+			headerTimer.unref?.();
+		} else if (headerOwnedByAgy) {
+			try {
+				ctx.ui.setHeader(undefined);
+			} catch {
+				// no interactive UI
+			}
+			headerOwnedByAgy = false;
+		}
+	}
+
+	function refreshModeStatus(ctx: ExtensionContext, agy: boolean): void {
+		try {
+			ctx.ui.setStatus(MODE_STATUS_KEY, agy ? `⬢ Antigravity-Mode (${mode})` : undefined);
+		} catch {
+			// no interactive UI
+		}
+	}
 
 	// ------------------------------------------------------------------
 	// Background-task status dock (footer/status bar)
@@ -666,7 +741,7 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				writeGlobalMode(parsed);
 				pi.appendEntry(MODE_ENTRY_TYPE, { mode: parsed });
 				refreshCapabilities();
-				applyToolMode(ctx.model);
+				applyToolMode(ctx.model, ctx);
 			};
 
 			const statusLine = () => {

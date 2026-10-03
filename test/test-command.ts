@@ -14,6 +14,7 @@ const notifications: string[] = [];
 // settable reply for the mock select dialog
 const uiSelectReply: { value: string | undefined } = { value: undefined };
 const statusCalls: Array<[string, string | undefined]> = [];
+const headerCalls: Array<Function | undefined> = [];
 
 const pi: any = {
 	registerTool: (t: any) => registeredTools.push(t.name),
@@ -35,6 +36,7 @@ const makeCtx = (modelId: string | undefined, branch: any[] = []) => ({
 	ui: {
 		notify: (msg: string) => notifications.push(msg),
 		setStatus: (key: string, text: string | undefined) => { statusCalls.push([key, text]); },
+		setHeader: (factory: Function | undefined) => { headerCalls.push(factory); },
 		select: async (_title: string, options: string[]) => {
 			if (uiSelectReply.value === "@ticked") {
 				return options.find((o) => o.startsWith("✓"));
@@ -57,8 +59,13 @@ if (!["view_file","run_command","write_to_file","replace_file_content","ask_ques
 	throw new Error("unexpected tool registration");
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 // session_start with non-gemini model + persisted "always" -> agy tools active
 await handlers["session_start"]({ type: "session_start" }, makeCtx("zai/glm-5.2", branch));
+await sleep(60); // banner applies via deferred timer
+check("banner set when agy active", headerCalls.at(-1) instanceof Function, `n=${headerCalls.length}`);
+check("mode status set when agy active", statusCalls.some(([k, v]) => k === "agy-mode" && v?.includes("Antigravity-Mode (always)")));
 console.log("after session_start (always, non-gemini):", activeTools.join(","));
 if (!activeTools.includes("view_file")) throw new Error("always mode failed");
 // originals stay ACTIVE (callable for delegation); declarations are hidden via prepareLoadout
@@ -75,6 +82,10 @@ if (!result?.systemPrompt?.startsWith("<identity>")) throw new Error("prompt not
 
 // /agy-mode off -> restores base tools
 await commandHandler!("off", makeCtx("zai/glm-5.2", branch));
+await sleep(10);
+check("banner restored (undefined) when inactive", headerCalls.at(-1) === undefined);
+const lastModeStatus = [...statusCalls].reverse().find(([k]) => k === "agy-mode");
+check("mode status cleared when inactive", lastModeStatus?.[1] === undefined, JSON.stringify(lastModeStatus));
 console.log("after /agy-mode off:", activeTools.join(","));
 if (activeTools.includes("view_file") || !activeTools.includes("read")) throw new Error("off mode failed to restore");
 
@@ -179,6 +190,6 @@ await handlersB["session_start"]({ type: "session_start" }, makeCtx("google/gemi
 console.log("global=off (file), settings=always, gemini model ->", activeToolsB.includes("view_file") ? "ACTIVE (WRONG)" : "inactive (correct)");
 if (activeToolsB.includes("view_file")) throw new Error("global off should suppress");
 
-check("status dock cleared (undefined) with no tasks", statusCalls.length > 0 && statusCalls.every(([k]) => k === "agy-tasks") && statusCalls.every(([, v]) => v === undefined), JSON.stringify(statusCalls));
+check("task dock cleared (undefined) with no tasks", statusCalls.filter(([k]) => k === "agy-tasks").every(([, v]) => v === undefined), JSON.stringify(statusCalls.filter(([k]) => k === "agy-tasks")));
 console.log("ALL COMMAND TESTS PASSED");
 if (failures > 0) process.exit(1);

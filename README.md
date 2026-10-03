@@ -83,6 +83,16 @@ Running tasks show in the status bar while any exist (pi-background-tasks-style 
 ⬢ agy 2 tasks: task-1 sleeper (3m12s) · task-2 server (12s)
 ```
 
+### Banner + status indicator
+
+While agy mode is **active** (in TUI sessions):
+
+- The startup banner is replaced with a centered **⬢ Antigravity-Mode** header
+  (deferred so it composes over theme extensions like pi-claude-style-tui;
+  the previous header returns on the next session start after deactivating)
+- The status bar shows **⬢ Antigravity-Mode (mode)** on the same row as the
+  context/cost items; it clears when the mode is inactive
+
 ## Tool-surface parity
 
 When active, the model sees **only** agy tool names — pi's `read`/`bash`/`edit`/`write` and the mapped originals (`web_search`, `fetch_content`, `steer_subagent`) are hidden from declarations while their functionality remains available through the wrappers. Tools from other extensions that have no agy counterpart (e.g. `SubagentWorkflow`, `bg_delegate`) stay declared as-is.
