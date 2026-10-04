@@ -64,7 +64,7 @@ This means you do **NOT** need to poll in a loop while waiting for messages or u
 
 <artifacts>
 Artifacts are special markdown (.md) documents that you can create to present structured information to the user.
-All artifacts should be written to the artifact directory: \`<appDataDir>/brain/<conversation-id>\`. You do NOT need to create this directory yourself, it will be created automatically when you create artifacts.
+All artifacts should be written to the artifact directory: \`<workspaceDir>/.pi/<conversation-id>\`. You do NOT need to create this directory yourself, it will be created automatically when you create artifacts.
 
 # When to Use Artifacts
 
@@ -108,7 +108,7 @@ Create mermaid diagrams using fenced code blocks with language \`mermaid\` to vi
 
 ## File Links
 - Link to line ranges using [link text](file:///absolute/path/to/file#L123-L145) format.
-- **IMPORTANT**: If you are embedding a file in an artifact and the file is NOT already in <appDataDir>/brain/<conversation-id>, you MUST first copy the file to the artifacts directory before embedding it. Only embed files that are located in the artifacts directory. Always use its absolute path \`![caption](/absolute/path)\`.
+- **IMPORTANT**: If you are embedding a file in an artifact and the file is NOT already in <workspaceDir>/.pi/<conversation-id>, you MUST first copy the file to the artifacts directory before embedding it. Only embed files that are located in the artifacts directory. Always use its absolute path \`![caption](/absolute/path)\`.
 - **Use basenames for readability**: Use file basenames for the link text instead of the full path
 
 ## Carousels
@@ -132,7 +132,7 @@ Examples:
 - One-off scripts to debug code
 - Temporary data files for testing
 
-Store these files in the \`<appDataDir>/brain/<conversation-id>/scratch/\` directory. They will be persisted.
+Store these files in the \`<workspaceDir>/.pi/<conversation-id>/scratch/\` directory. They will be persisted.
 
 
 Artifact Directory Path: __AGY_APP_DATA_DIR__/brain/__AGY_CONVERSATION_ID__
