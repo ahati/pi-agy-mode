@@ -1,0 +1,69 @@
+name: Publish
+
+# Publishes to npm when a version tag is pushed, e.g.
+#   npm version patch && git push --follow-tags
+#
+# Authentication is OIDC (npm trusted publishing) — no NPM_TOKEN secret.
+# Requires a trusted publisher configured on npmjs.com for this repo with the
+# workflow filename "publish.yml" (see README > Publishing).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  id-token: write # required: lets npm exchange the GitHub OIDC token
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24" # trusted publishing needs Node >= 22.14
+          package-manager-cache: false
+
+      # No package-lock.json is committed; pi's host-provided modules are
+      # peerDependencies and are installed here so the tests can resolve them.
+      - name: Install host peer dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Fail if tag does not match package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $pkg"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: node --experimental-strip-types test/test-units.ts
+
+      - name: Command tests
+        run: node --experimental-strip-types test/test-command.ts
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest # trusted publishing does not support self-hosted runners
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+
+      - name: Install host peer dependencies
+        run: npm install --no-audit --no-fund
+
+      # npm detects the OIDC environment and authenticates automatically.
+      # Provenance attestation is generated automatically — no --provenance needed.
+      - name: Publish to npm
+        run: npm publish
