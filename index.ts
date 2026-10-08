@@ -10,7 +10,7 @@
  *       -> pi built-ins (read / bash / write / edit / dialogs)
  *   search_web -> web_search        (pi-web-access, when installed)
  *   read_url_content -> fetch_content (pi-web-access, when installed)
- *   send_message -> steer_subagent  (pi-subagents, when installed)
+ *   send_message -> steer_subagent  (any subagent extension providing it, when installed)
  *   manage_task -> native registry (tasks.ts, borrowed from pi-background-tasks)
  *       — adds 'send_input' (stdin) that bg_* tools do not expose
  *   schedule -> native timers + cron (schedule.ts)
@@ -21,6 +21,21 @@
  *   /agy-mode always      force agy prompt + tools for every model
  *   /agy-mode gemini-only apply them only when the model id/name matches /gemini/i (default)
  *   /agy-mode off         never apply them
+ *
+ * Hosted-session compatibility: subagent extensions and SDK hosts load this
+ * extension inside their scoped agent sessions too — and there, like
+ * everywhere, activation is settings-driven: "agyMode" (+ model match for
+ * gemini-only) decides, uniformly in TUI, `pi -p`/RPC headless, and
+ * subagent sessions alike; a subagent's activation always mirrors the
+ * setting. When inactive, agy tool declarations are hidden from requests
+ * even where a host re-activates registered tools each turn
+ * (agyPrepareLoadout), and active-set writes are subtractive (own names
+ * only). One deliberate exception: a hosted session's prompt was supplied
+ * by its creator (pi's systemPromptOverride → customPrompt, see
+ * isHostedSession) — the tool surface still follows the settings there, but
+ * the creator's prompt is kept, since replacing it would erase the agent's
+ * role. No host extension is referenced by name, symbol, tool list, or
+ * path.
  *
  * The choice is persisted in the session (survives reload/resume). A global
  * default can be set with an "agyMode" key in settings.json.
@@ -99,9 +114,35 @@ function quoteShell(path: string): string {
 	return `'${path.replaceAll("'", `'\\''`)}'`;
 }
 
+/**
+ * A session whose base system prompt was supplied by its creator — a subagent
+ * of ANY subagent extension, an SDK-driven agent, a workflow runner — carries
+ * that prompt as `customPrompt` in its system-prompt options (pi's
+ * `systemPromptOverride` loader hook, the one mechanism hosts use to scope an
+ * agent's prompt at creation). Root sessions the user drives — TUI, `pi -p`,
+ * RPC, headless included — leave it unset and get pi's default prompt
+ * pipeline. Used to protect the hosted prompt ONLY: settings-driven
+ * activation (tool surface) applies in hosted sessions like anywhere else,
+ * but the agy prompt takeover skips them — replacing the creator's prompt
+ * would erase the agent's role and instructions.
+ *
+ * Edge, accepted: a user-authored SYSTEM.md (~/.pi/agent/SYSTEM.md or
+ * .pi/SYSTEM.md) also sets customPrompt, so the agy prompt yields there too —
+ * conservative, never corruption.
+ */
+function isHostedSession(pi: ExtensionAPI): boolean {
+	try {
+		// Bound from the session's base prompt options at runtime, but not yet
+		// declared on ExtensionAPI's public type — hence the narrow cast.
+		const getOptions = (pi as { getSystemPromptOptions?: () => { customPrompt?: string } }).getSystemPromptOptions;
+		return getOptions?.().customPrompt !== undefined;
+	} catch {
+		// Options unavailable in this host — assume a root session.
+		return false;
+	}
+}
+
 export default function agyModeExtension(pi: ExtensionAPI) {
-	/** Active tool set observed before agy mode took over, restored when leaving. */
-	let baseTools: string[] | null = null;
 	/** Current mode; session-persisted, defaults to gemini-only (or settings.json "agyMode"). */
 	let mode: AgyMode = "gemini-only";
 	/** Session-scoped services (created in session_start, disposed in session_shutdown). */
@@ -151,21 +192,28 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 
 	const applyToolMode = (model: ExtensionContext["model"], ctx?: ExtensionContext) => {
 		const agy = isAgyTarget(model);
-		const current = pi.getActiveTools();
-		if (baseTools === null) {
-			// First application: snapshot whatever the session normally exposes.
-			baseTools = current;
-		}
 		setAgyLoadout(agy, caps);
+		const current = pi.getActiveTools();
 		if (agy) {
 			// Wrapped originals STAY active (callable via ctx.executeTool); their
-			// declarations are omitted by agyPrepareLoadout while agy tools are added.
-			const merged = new Set(current);
-			for (const name of activeAgyToolNames(caps)) merged.add(name);
-			pi.setActiveTools([...merged]);
-		} else if (baseTools) {
+			// declarations are omitted by agyPrepareLoadout while agy tools are
+			// added. Wrappers whose underlying tool this session does not have
+			// (subagents often run restricted toolsets) stay out — a declared tool
+			// that cannot execute is worse than an absent one.
+			const available = new Set(pi.getAllTools().map((tool) => tool.name));
+			const merged = [...current];
+			for (const name of activeAgyToolNames(caps, available)) {
+				if (!merged.includes(name)) merged.push(name);
+			}
+			if (merged.length !== current.length) pi.setActiveTools(merged);
+		} else {
+			// Subtractive only: remove exactly our own names and never touch the
+			// rest of the active set. Another extension may own it (a subagent
+			// host re-derives the active set every turn), so resetting to a
+			// snapshot taken at session start would wipe their tools away.
 			const agyNames = new Set(allAgyToolNames());
-			pi.setActiveTools(baseTools.filter((n) => !agyNames.has(n)));
+			const next = current.filter((name) => !agyNames.has(name));
+			if (next.length !== current.length) pi.setActiveTools(next);
 		}
 		if (ctx) {
 			refreshModeStatus(ctx, agy);
@@ -184,7 +232,6 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 	// ------------------------------------------------------------------
 
 	pi.on("session_start", (_event, ctx) => {
-		baseTools = null;
 		restorePersistedMode(ctx);
 
 		const notify = async (customType: string, content: string, senderId: string) => {
@@ -244,6 +291,14 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		refreshCapabilities(); // other extensions may have registered tools since start
 		applyToolMode(ctx.model, ctx);
 		if (!isAgyTarget(ctx.model)) {
+			return undefined;
+		}
+		// Activation follows the settings in every session, hosted ones included
+		// — the tool surface applies. The prompt does not: a hosted session's
+		// prompt was supplied by its creator (the agent definition it runs), and
+		// replacing it wholesale would erase the agent's role and instructions.
+		// Root sessions (TUI, `pi -p`, RPC) get the full agy prompt takeover.
+		if (isHostedSession(pi)) {
 			return undefined;
 		}
 		return { systemPrompt: buildAgySystemPrompt(ctx, pi) };

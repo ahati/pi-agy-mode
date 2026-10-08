@@ -98,6 +98,11 @@ const lastModeStatus = [...statusCalls].reverse().find(([k]) => k === "agy-mode"
 check("mode status cleared when inactive", lastModeStatus?.[1] === undefined, JSON.stringify(lastModeStatus));
 console.log("after /agy-mode off:", activeTools.join(","));
 if (activeTools.includes("view_file") || !activeTools.includes("read")) throw new Error("off mode failed to restore");
+check(
+	"off mode is subtractive (foreign tools survive)",
+	activeTools.includes("grep") && activeTools.includes("web_search") && activeTools.includes("steer_subagent") && activeTools.includes("askUserQuestion"),
+	activeTools.join(","),
+);
 
 // before_agent_start in off mode -> no override
 const offResult: any = await handlers["before_agent_start"](
@@ -201,5 +206,97 @@ console.log("global=off (file), settings=always, gemini model ->", activeToolsB.
 if (activeToolsB.includes("view_file")) throw new Error("global off should suppress");
 
 check("task dock cleared (undefined) with no tasks", statusCalls.filter(([k]) => k === "agy-tasks").every(([, v]) => v === undefined), JSON.stringify(statusCalls.filter(([k]) => k === "agy-tasks")));
+
+// --- Settings-synced activation -----------------------------------------
+// Activation mirrors the /agy-mode setting in EVERY session, subagents
+// included: on => the agy tool surface applies; off => nothing applies. A
+// hosted session keeps its creator's prompt (the agent definition); roots
+// get the full prompt takeover. Wrappers whose underlying tool is absent
+// (restricted subagent toolsets) stay undeclared.
+{
+	// Hosted subagent, setting ON: tools activate, creator prompt kept.
+	const hostedActive = ["read", "bash", "edit", "write", "grep"];
+	const hostedHandlers: Record<string, Function> = {};
+	factory({
+		registerTool: () => {}, registerCommand: () => {}, appendEntry: () => {},
+		getSettings: () => ({}),
+		getActiveTools: () => [...hostedActive],
+		setActiveTools: (n: string[]) => { hostedActive.length = 0; hostedActive.push(...n); },
+		on: (e: string, h: Function) => { hostedHandlers[e] = h; },
+		sendMessage: async () => {},
+		getAllTools: () => ["read", "bash", "edit", "write", "grep", "web_search"].map((name) => ({ name })),
+		getSystemPromptOptions: () => ({ customPrompt: "You are a scoped research agent..." }),
+	} as any);
+	const hostedBranch = [{ type: "custom", customType: "agy-mode", data: { mode: "always" } }];
+	const hostedCtx = { ...makeCtx("google/gemini-3-pro", hostedBranch), mode: "print", hasUI: false };
+	await hostedHandlers["session_start"]({ type: "session_start" }, hostedCtx);
+	check("hosted + setting on: agy tools activate", hostedActive.includes("view_file") && hostedActive.includes("search_web"), hostedActive.join(","));
+	const hostedResult: any = await hostedHandlers["before_agent_start"](
+		{ type: "before_agent_start", prompt: "hi", systemPrompt: "hosted agent-definition prompt" },
+		hostedCtx,
+	);
+	check("hosted + setting on: creator prompt kept (no override)", hostedResult?.systemPrompt === undefined);
+
+	// Hosted subagent, setting OFF: nothing applies (in sync).
+	const offActive = ["read", "bash", "edit", "write", "view_file"];
+	const offHandlers: Record<string, Function> = {};
+	factory({
+		registerTool: () => {}, registerCommand: () => {}, appendEntry: () => {},
+		getSettings: () => ({}),
+		getActiveTools: () => [...offActive],
+		setActiveTools: (n: string[]) => { offActive.length = 0; offActive.push(...n); },
+		on: (e: string, h: Function) => { offHandlers[e] = h; },
+		sendMessage: async () => {},
+		getAllTools: () => ["read", "bash", "edit", "write"].map((name) => ({ name })),
+		getSystemPromptOptions: () => ({ customPrompt: "scoped agent prompt" }),
+	} as any);
+	const offCtx = { ...makeCtx("google/gemini-3-pro", [{ type: "custom", customType: "agy-mode", data: { mode: "off" } }]), mode: "print", hasUI: false };
+	await offHandlers["session_start"]({ type: "session_start" }, offCtx);
+	check("hosted + setting off: agy tools removed, foreign kept", !offActive.includes("view_file") && offActive.includes("read") && offActive.includes("bash"), offActive.join(","));
+	const offResult: any = await offHandlers["before_agent_start"]({ type: "before_agent_start", prompt: "hi", systemPrompt: "x" }, offCtx);
+	check("hosted + setting off: no prompt override", offResult?.systemPrompt === undefined);
+
+	// Restricted toolset (no edit/write): those wrappers stay out.
+	const restrictedActive = ["read", "bash"];
+	const restrictedHandlers: Record<string, Function> = {};
+	factory({
+		registerTool: () => {}, registerCommand: () => {}, appendEntry: () => {},
+		getSettings: () => ({}),
+		getActiveTools: () => [...restrictedActive],
+		setActiveTools: (n: string[]) => { restrictedActive.length = 0; restrictedActive.push(...n); },
+		on: (e: string, h: Function) => { restrictedHandlers[e] = h; },
+		sendMessage: async () => {},
+		getAllTools: () => ["read", "bash", "web_search"].map((name) => ({ name })),
+	} as any);
+	await restrictedHandlers["session_start"]({ type: "session_start" }, makeCtx("google/gemini-3-pro", [{ type: "custom", customType: "agy-mode", data: { mode: "always" } }]));
+	check(
+		"restricted toolset: only executable wrappers activate",
+		restrictedActive.includes("view_file") && restrictedActive.includes("run_command") && restrictedActive.includes("search_web")
+			&& !restrictedActive.includes("write_to_file") && !restrictedActive.includes("replace_file_content"),
+		restrictedActive.join(","),
+	);
+
+	// Headless root (no creator prompt): full takeover per settings.
+	const headlessActive = ["read", "bash", "edit", "write"];
+	const headlessHandlers: Record<string, Function> = {};
+	factory({
+		registerTool: () => {}, registerCommand: () => {}, appendEntry: () => {},
+		getSettings: () => ({}),
+		getActiveTools: () => [...headlessActive],
+		setActiveTools: (n: string[]) => { headlessActive.length = 0; headlessActive.push(...n); },
+		on: (e: string, h: Function) => { headlessHandlers[e] = h; },
+		sendMessage: async () => {},
+		getAllTools: () => ["read", "bash", "edit", "write", "web_search"].map((name) => ({ name })),
+	} as any);
+	const headlessCtx = { ...makeCtx("google/gemini-3-pro", [{ type: "custom", customType: "agy-mode", data: { mode: "always" } }]), mode: "print", hasUI: false };
+	await headlessHandlers["session_start"]({ type: "session_start" }, headlessCtx);
+	check("headless root: agy tools active", headlessActive.includes("view_file"), headlessActive.join(","));
+	const headlessResult: any = await headlessHandlers["before_agent_start"](
+		{ type: "before_agent_start", prompt: "hi", systemPrompt: "pi default prompt" },
+		headlessCtx,
+	);
+	check("headless root: prompt replaced", typeof headlessResult?.systemPrompt === "string" && headlessResult.systemPrompt.startsWith("<identity>"));
+}
+
 console.log("ALL COMMAND TESTS PASSED");
 if (failures > 0) process.exit(1);

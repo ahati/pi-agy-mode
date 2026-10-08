@@ -3,7 +3,7 @@
 import { rmSync } from "node:fs";
 import { AgyTaskRegistry, DEFAULT_LOG_BYTES } from "../tasks.ts";
 import { AgyScheduler, parseCron } from "../schedule.ts";
-import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities } from "../wrappers.ts";
+import { ensureCapabilityWrappers, hiddenOriginals, activeAgyToolNames, probeCapabilities, agyPrepareLoadout, setAgyLoadout, allAgyToolNames } from "../wrappers.ts";
 
 const DIR = "/tmp/agy-test-tasks";
 rmSync(DIR, { recursive: true, force: true });
@@ -127,8 +127,42 @@ const hidden = hiddenOriginals(caps);
 check("hides originals", hidden.includes("read") && hidden.includes("bash") && hidden.includes("web_search") && hidden.includes("fetch_content") && hidden.includes("askUserQuestion") && !hidden.includes("steer_subagent"));
 const active = activeAgyToolNames(caps);
 check("active agy names", active.includes("search_web") && active.includes("read_url_content") && active.includes("manage_task") && active.includes("schedule") && !active.includes("send_message"));
+check(
+	"availability filter: full toolset keeps core wrappers",
+	activeAgyToolNames(caps, new Set(["read", "bash", "edit", "write"])).includes("write_to_file"),
+);
+check(
+	"availability filter: restricted toolset drops unavailable wrappers",
+	(() => {
+		const filtered = activeAgyToolNames(caps, new Set(["read", "bash"]));
+		return filtered.includes("view_file") && filtered.includes("run_command") && filtered.includes("search_web")
+			&& !filtered.includes("write_to_file") && !filtered.includes("replace_file_content");
+	})(),
+);
 ensureCapabilityWrappers(mockPi, caps); // idempotent
 check("idempotent registration", registeredTools.filter((n) => n === "search_web").length === 1);
+
+// ---- Loadout declaration hiding ---------------------------------------
+// Inactive => every agy tool stays UNDECLARED even if a subagent host
+// keeps them in the active set; active => wrapped originals hidden instead.
+setAgyLoadout(false, caps);
+const inactiveHides = agyPrepareLoadout({} as any)?.hiddenDeclarations ?? [];
+check(
+	"inactive loadout hides all agy declarations",
+	allAgyToolNames().every((n) => inactiveHides.includes(n)),
+	inactiveHides.join(","),
+);
+check(
+	"inactive loadout leaves foreign tools declared",
+	!inactiveHides.includes("read") && !inactiveHides.includes("web_search") && !inactiveHides.includes("grep"),
+);
+setAgyLoadout(true, caps);
+const activeHides = agyPrepareLoadout({} as any)?.hiddenDeclarations ?? [];
+check(
+	"active loadout hides wrapped originals",
+	activeHides.includes("read") && activeHides.includes("bash") && activeHides.includes("web_search") && activeHides.includes("fetch_content"),
+);
+check("active loadout keeps agy tools declared", !activeHides.includes("view_file") && !activeHides.includes("run_command"));
 
 check("onChange fired on spawn+exit", changeEvents >= 2, `n=${changeEvents}`);
 

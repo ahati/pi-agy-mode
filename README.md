@@ -102,6 +102,18 @@ While agy mode is **active** (in TUI sessions):
 
 When active, the model sees **only** agy tool names — pi's `read`/`bash`/`edit`/`write` and the mapped originals (`web_search`, `fetch_content`, `steer_subagent`) are hidden from declarations while their functionality remains available through the wrappers. Tools from other extensions that have no agy counterpart (e.g. `SubagentWorkflow`, `bg_delegate`) stay declared as-is.
 
+## Activation, headless sessions, and subagent hosts
+
+agy-mode is a compatibility layer for Google models: activation is driven by the `/agy-mode` setting (or the `agyMode` key in settings.json) plus the model, **uniformly in every session** — interactive TUI, `pi -p`/RPC headless, and subagent sessions alike. A subagent's activation always mirrors the setting:
+
+- **On** ⇒ the agy tool surface applies there too — `view_file`/`run_command`/… declared, originals hidden, `manage_task`/`schedule` live.
+- **Off** ⇒ nothing applies, and agy tool declarations are hidden from requests even where a host re-activates registered tools every turn — a disabled agy-mode cannot leak into any agent's tool list.
+- **Restricted toolsets.** Subagents often run with a subset of pi's built-ins; wrappers whose underlying tool is absent (e.g. `replace_file_content` without `edit`) are not activated — a declared tool that cannot execute is worse than an absent one.
+- **Prompts.** Root sessions (TUI, `pi -p`, RPC) get the full agy prompt takeover when active. A hosted session's prompt was supplied by its creator (pi's `systemPromptOverride`, surfaced as `customPrompt`) — the tool surface follows the settings there, but the creator's prompt is kept, since replacing it would erase the agent's role and instructions (including structured-output contracts).
+- **Subtractive discipline.** Leaving agy mode only ever removes agy's own tool names from the active set; tools activated by other extensions are never touched.
+
+The hosted-prompt check is a pi-core API, not a convention of any host extension: no names, symbols, tool lists, or paths are referenced, so it holds for every subagent extension, present or future, nested agents at any depth included. Edge: a user-authored `SYSTEM.md` (`~/.pi/agent/SYSTEM.md` or `.pi/SYSTEM.md`) also counts as an owned prompt, so the agy prompt yields to it.
+
 ## Development
 
 One-time dev setup (links pi's bundled modules; `node_modules/` is gitignored):

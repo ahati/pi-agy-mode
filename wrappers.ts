@@ -64,7 +64,14 @@ export function setAgyLoadout(active: boolean, caps: AgyCapabilities): void {
 
 /** Attach to every agy wrapper: hides wrapped originals' declarations in agy mode. */
 export function agyPrepareLoadout(_loadout: ToolLoadout): ToolLoadoutChanges | undefined {
-	if (!loadoutState.active) return undefined;
+	if (!loadoutState.active) {
+		// Inactive: our tools must stay UNDECLARED even where a host activates
+		// every registered tool each turn (subagent hosts re-derive agent scopes
+		// from the registry, so an active-set correction would be undone by the
+		// next turn_end renarrow). The active set is not ours to own in such
+		// sessions, but declarations are all the model ever sees.
+		return { hiddenDeclarations: allAgyToolNames() };
+	}
 	return { hiddenDeclarations: hiddenOriginals(loadoutState.caps) };
 }
 
@@ -103,13 +110,31 @@ export function hiddenOriginals(caps: AgyCapabilities): string[] {
 	return hidden;
 }
 
-/** All agy tool names that should be declared, given the probed capabilities. */
-export function activeAgyToolNames(caps: AgyCapabilities): string[] {
+/** Core wrapper -> pi built-in it delegates to (availability gating). */
+const CORE_WRAPPER_TARGETS: Record<string, string> = {
+	view_file: "read",
+	run_command: "bash",
+	write_to_file: "write",
+	replace_file_content: "edit",
+};
+
+/**
+ * All agy tool names that should be declared, given the probed capabilities.
+ * With `available` (this session's registered tool names), core wrappers whose
+ * delegated built-in is absent are left out — subagent hosts often grant
+ * restricted toolsets, and a declared wrapper that cannot execute is worse
+ * than an absent one.
+ */
+export function activeAgyToolNames(caps: AgyCapabilities, available?: ReadonlySet<string>): string[] {
 	const names: string[] = [...AGY_CORE_TOOLS];
 	if (registered.has("search_web") && caps.webSearch) names.push("search_web");
 	if (registered.has("read_url_content") && caps.fetchContent) names.push("read_url_content");
 	if (registered.has("send_message") && caps.steerSubagent) names.push("send_message");
-	return names;
+	if (!available) return names;
+	return names.filter((name) => {
+		const target = CORE_WRAPPER_TARGETS[name];
+		return target === undefined || available.has(target);
+	});
 }
 
 /** Every agy tool name this extension can register (for exclusion sets). */
