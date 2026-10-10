@@ -117,14 +117,24 @@ const registeredTools: string[] = [];
 const mockPi: any = {
 	registerTool: (t: any) => registeredTools.push(t.name),
 	getAllTools: () =>
-		["read", "bash", "edit", "write", "grep", "web_search", "fetch_content", "askUserQuestion"].map((name) => ({ name })),
+		["read", "bash", "edit", "write", "grep", "web_search", "fetch_content", "ask_user_question"].map((name) => ({ name })),
 };
 const caps = probeCapabilities(mockPi);
 check("probe", caps.webSearch && caps.fetchContent && !caps.steerSubagent && caps.askUserQuestion);
+check("probe resolves snake_case ask tool", caps.askUserQuestionName === "ask_user_question", caps.askUserQuestionName);
+const legacyCaps = probeCapabilities({
+	getAllTools: () => ["read", "bash", "askUserQuestion"].map((name) => ({ name })),
+} as any);
+check("probe accepts legacy camelCase", legacyCaps.askUserQuestion && legacyCaps.askUserQuestionName === "askUserQuestion");
+check("probe with no ask tool", !probeCapabilities({ getAllTools: () => [{ name: "bash" }] } as any).askUserQuestion);
 ensureCapabilityWrappers(mockPi, caps);
 check("wrappers registered for present caps", registeredTools.includes("search_web") && registeredTools.includes("read_url_content") && !registeredTools.includes("send_message"));
 const hidden = hiddenOriginals(caps);
-check("hides originals", hidden.includes("read") && hidden.includes("bash") && hidden.includes("web_search") && hidden.includes("fetch_content") && hidden.includes("askUserQuestion") && !hidden.includes("steer_subagent"));
+check(
+	"hides originals (both ask casings)",
+	hidden.includes("read") && hidden.includes("bash") && hidden.includes("web_search") && hidden.includes("fetch_content")
+		&& hidden.includes("ask_user_question") && hidden.includes("askUserQuestion") && !hidden.includes("steer_subagent"),
+);
 const active = activeAgyToolNames(caps);
 check("active agy names", active.includes("search_web") && active.includes("read_url_content") && active.includes("manage_task") && active.includes("schedule") && !active.includes("send_message"));
 check(

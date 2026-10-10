@@ -22,6 +22,12 @@ export interface AgyCapabilities {
 	fetchContent: boolean;
 	steerSubagent: boolean;
 	askUserQuestion: boolean;
+	/**
+	 * Resolved registered ask-tool name: "ask_user_question" (rpiv
+	 * @juicesharp/rpiv-ask-user-question) or "askUserQuestion" (older
+	 * pi-ask-user-question). Undefined when neither is registered.
+	 */
+	askUserQuestionName?: "ask_user_question" | "askUserQuestion";
 }
 
 /** agy core wrappers that delegate to pi built-ins; always available. */
@@ -77,11 +83,20 @@ export function agyPrepareLoadout(_loadout: ToolLoadout): ToolLoadoutChanges | u
 
 export function probeCapabilities(pi: ExtensionAPI): AgyCapabilities {
 	const names = new Set(pi.getAllTools().map((tool) => tool.name));
+	// Either ask-tool casing counts: rpiv registers "ask_user_question", the
+	// older pi-ask-user-question registered "askUserQuestion". rpiv wins when
+	// both exist (its questionnaire is the richer surface).
+	const askToolName = names.has("ask_user_question")
+		? ("ask_user_question" as const)
+		: names.has("askUserQuestion")
+			? ("askUserQuestion" as const)
+			: undefined;
 	return {
 		webSearch: names.has("web_search"),
 		fetchContent: names.has("fetch_content"),
 		steerSubagent: names.has("steer_subagent"),
-		askUserQuestion: names.has("askUserQuestion"),
+		askUserQuestion: askToolName !== undefined,
+		askUserQuestionName: askToolName,
 	};
 }
 
@@ -105,8 +120,11 @@ export function hiddenOriginals(caps: AgyCapabilities): string[] {
 	if (registered.has("search_web") && caps.webSearch) hidden.push("web_search");
 	if (registered.has("read_url_content") && caps.fetchContent) hidden.push("fetch_content");
 	if (registered.has("send_message") && caps.steerSubagent) hidden.push("steer_subagent");
-	// ask_question (core, always registered) replaces askUserQuestion as the ask surface
-	if (caps.askUserQuestion) hidden.push("askUserQuestion");
+	// ask_question (core, always registered) replaces the ask surface. Both
+	// casings are listed: rpiv registers "ask_user_question" while older
+	// pi-ask-user-question builds used "askUserQuestion" — hiding a name that
+	// is not active is a no-op, so cover both.
+	if (caps.askUserQuestion) hidden.push("ask_user_question", "askUserQuestion");
 	return hidden;
 }
 

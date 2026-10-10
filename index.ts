@@ -6,8 +6,10 @@
  * mirror the Antigravity CLI 1.2.14 capture in 20260930-215001_29e0f745.json.
  *
  * Tool mapping:
- *   view_file / run_command / write_to_file / replace_file_content / ask_question
- *       -> pi built-ins (read / bash / write / edit / dialogs)
+ *   view_file / run_command / write_to_file / replace_file_content
+ *       -> pi built-ins (read / bash / write / edit)
+ *   ask_question -> pi dialogs, or whichever ask tool is registered:
+ *       "ask_user_question" (rpiv) / "askUserQuestion" (legacy pi-ask-user-question)
  *   search_web -> web_search        (pi-web-access, when installed)
  *   read_url_content -> fetch_content (pi-web-access, when installed)
  *   send_message -> steer_subagent  (any subagent extension providing it, when installed)
@@ -637,24 +639,53 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		}),
 		async execute(_id, params, _signal, _onUpdate, toolCtx) {
 			const questions = params.questions ?? [];
-			const canDelegate = (toolCtx.tools ?? []).some((t) => t.name === "askUserQuestion");
-			if (canDelegate) {
-				// pi-ask-user-question installed: delegate for its richer UX, one call per question
+			// Delegate to whichever ask tool this session provides — rpiv's
+			// "ask_user_question" or the legacy pi-ask-user-question
+			// "askUserQuestion" — for its richer UX; fall back to the native
+			// dialogs below when neither is registered or the payload does not
+			// fit the delegate's schema.
+			const askTool = (toolCtx.tools ?? []).find(
+				(t) => t.name === "ask_user_question" || t.name === "askUserQuestion",
+			);
+			if (askTool) {
 				const list = questions.length > 0
 					? questions
 					: [{ question: "What would you like to clarify?", options: undefined, is_multi_select: undefined }];
-				const lines: string[] = [];
-				for (const q of list) {
-					const outcome = await toolCtx.executeTool("askUserQuestion", {
-						question: q.question,
-						options: q.options,
-					});
-					if (outcome.isError) {
-						throw new Error(textOf(outcome.result.content) || "askUserQuestion failed");
+				if (askTool.name === "askUserQuestion") {
+					// Legacy flat schema: one call per question.
+					const lines: string[] = [];
+					for (const q of list) {
+						const outcome = await toolCtx.executeTool("askUserQuestion", {
+							question: q.question,
+							options: q.options,
+						});
+						if (outcome.isError) {
+							throw new Error(textOf(outcome.result.content) || "askUserQuestion failed");
+						}
+						lines.push(`Q: ${q.question}\nA: ${textOf(outcome.result.content)}`);
 					}
-					lines.push(`Q: ${q.question}\nA: ${textOf(outcome.result.content)}`);
+					return { content: [{ type: "text", text: lines.join("\n\n") }], details: { answers: lines.length } };
 				}
-				return { content: [{ type: "text", text: lines.join("\n\n") }], details: { answers: lines.length } };
+				// rpiv schema: questions[] with required header (<=16 chars) and
+				// 2-4 {label, description} options per question. Delegate only when
+				// every question fits; a rejected call (reserved/duplicate labels,
+				// no UI in this host, ...) falls through to the native dialogs.
+				if (isQuestionnaireDelegatable(list)) {
+					const outcome = await toolCtx.executeTool("ask_user_question", {
+						questions: list.map((q) => ({
+							question: q.question!,
+							header: (q.question || "Question").slice(0, 16),
+							options: (q.options ?? []).map((label) => ({ label, description: "" })),
+							...(q.is_multi_select ? { multiSelect: true } : {}),
+						})),
+					});
+					if (!outcome.isError) {
+						return {
+							content: [{ type: "text", text: textOf(outcome.result.content) || "(no answer recorded)" }],
+							details: { answers: list.length },
+						};
+					}
+				}
 			}
 			if (!toolCtx.hasUI) {
 				return {
@@ -830,7 +861,8 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 				const mapped = caps.webSearch ? "web_search ✓" : "web_search ✗";
 				const fetched = caps.fetchContent ? "fetch_content ✓" : "fetch_content ✗";
 				const steer = caps.steerSubagent ? "steer_subagent ✓" : "steer_subagent ✗";
-				const ask = caps.askUserQuestion ? "askUserQuestion ✓" : "askUserQuestion ✗";
+				const askName = caps.askUserQuestionName ?? "ask_user_question";
+				const ask = caps.askUserQuestion ? `${askName} ✓` : `${askName} ✗`;
 				return (
 					`agy-mode: ${mode} (persisted) — ${active ? "ACTIVE" : "inactive"} for ${model}\n` +
 					`mapped extensions: ${mapped}, ${fetched}, ${steer}, ${ask}\n` +
@@ -872,6 +904,28 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 			ctx.ui.notify(statusLine(), "info");
 		},
 	});
+}
+
+/**
+ * True when every question fits rpiv ask_user_question's schema: 1-4
+ * questions, each with 2-4 unique options and unique non-empty text.
+ * Free-form questions (no options) and over-wide payloads take the native
+ * select/input path instead of a guaranteed validation rejection.
+ */
+function isQuestionnaireDelegatable(
+	questions: { question?: string; options?: string[] }[],
+): boolean {
+	if (questions.length < 1 || questions.length > 4) return false;
+	const seenQuestions = new Set<string>();
+	for (const q of questions) {
+		const text = q.question?.trim();
+		if (!text || seenQuestions.has(text)) return false;
+		seenQuestions.add(text);
+		const opts = q.options ?? [];
+		if (opts.length < 2 || opts.length > 4) return false;
+		if (new Set(opts).size !== opts.length) return false;
+	}
+	return true;
 }
 
 function textOf(content: unknown): string {
