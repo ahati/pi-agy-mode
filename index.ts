@@ -622,14 +622,14 @@ export default function agyModeExtension(pi: ExtensionAPI) {
 		label: "ask_question",
 		description:
 			"Ask the user a clarifying question with selectable options. Use when intent is ambiguous and the choice is genuinely the user's to make.\n" +
-			"Each question has optional options (2+); without options the user types a free-form answer.",
+			"Each question has 2-4 options (concise 1-5 word labels); without options the user types a free-form answer. Ask up to 4 related questions in one call.",
 		parameters: Type.Object({
 			questions: Type.Optional(
 				Type.Array(
 					Type.Object({
 						question: Type.String({ description: "The question to ask the user." }),
 						options: Type.Optional(Type.Array(Type.String(), { description: "At least 2 answer options." })),
-						is_multi_select: Type.Optional(Type.Boolean({ description: "Accepted; single-select only." })),
+						is_multi_select: Type.Optional(Type.Boolean({ description: "Set true when several answers can be valid at once (multiple selection)." })),
 					}),
 					{ description: "The list of questions to ask." },
 				),

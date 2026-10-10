@@ -55,12 +55,26 @@ Path: ${tasksPath}
 **Updating task.md**: Mark items as \`[/]\` when starting work on them, and \`[x]\` when completed. Update task.md as you make progress through your checklist.
 </task_list>`;
 
+// pi-specific addition (no agy capture analog; pairs with the ask_question
+// tool declaration): route clarifying questions through the question tool —
+// which delegates to the session's ask_user_question/askUserQuestion tool —
+// instead of plain chat text. Rules mirror the delegate's schema so payloads
+// survive delegation (2-4 options, one batched call).
+const askingUsers = `<asking_users>
+When intent is ambiguous, several viable approaches exist, or a decision is genuinely the user's to make, ask with the \`ask_question\` tool instead of guessing or asking in plain text.
+
+- Ask up to 4 related questions in ONE \`ask_question\` call; never stack multiple ask_question calls back-to-back.
+- Give each question 2-4 options: concise labels (1-5 words) covering the distinct choices. Without options the user types a free-form answer.
+- Set \`is_multi_select\` to true only when several answers can be valid at once.
+- Do not use the tool for quick yes/no confirmations mid-task or simple status updates — plain text is fine there. If the tool reports no interactive UI, state your assumptions and proceed with the most reasonable option.
+</asking_users>`;
+
 	return AGY_CAPTURE_PROMPT.replaceAll("__AGY_OS__", process.platform)
 		.replaceAll("__AGY_WORKSPACE__", ctx.cwd)
 		.replaceAll("__AGY_CWD__", ctx.cwd)
 		.replaceAll("__AGY_APP_DATA_DIR__", agentDir)
 		.replaceAll("__AGY_CONVERSATION_ID__", conversationId)
-		.replaceAll("__AGY_SKILLS_LIST__", skillsList) + "\n" + taskList;
+		.replaceAll("__AGY_SKILLS_LIST__", skillsList) + "\n" + taskList + "\n" + askingUsers;
 }
 
 /** All skills pi would advertise for this session (defaults + installed pi packages). */

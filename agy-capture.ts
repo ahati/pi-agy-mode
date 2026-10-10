@@ -6,6 +6,11 @@
  * sections describing Antigravity product systems that pi does not have are
  * omitted (<slash_commands>, <planning_mode>, <planning_mode_artifacts>).
  * The <skills> "Available skills" list is filled with pi skills at runtime.
+ *
+ * One deliberate deviation from the capture: the <artifacts> "don't use"
+ * list points asking-for-input at the ask_question tool instead of "just ask
+ * directly", so the model routes clarifying questions through the question
+ * tool surface (see agy-prompt.ts <asking_users> for the full usage rules).
  */
 export const AGY_CAPTURE_PROMPT = `<identity>
 You are Antigravity, a powerful agentic AI coding assistant designed by the Google Deepmind team working on Advanced Agentic Coding.
@@ -75,7 +80,7 @@ All artifacts should be written to the artifact directory: \`<workspaceDir>/.pi/
 
 **Don't use artifacts for:**
 - Simple one-off answers or very short paragraph content - just respond directly
-- Asking questions or requesting user input - just ask directly
+- Asking questions or requesting user input - use the ask_question tool instead
 
 **After creating or updating an artifact**, DO NOT re-summarize the artifact contents in your response to the user. Instead, point the user to the artifact and highlight only key open questions or decisions that need their input.
 
