@@ -1,5 +1,18 @@
 // Headless behavioral test for agy-mode using a mock ExtensionAPI.
-// Run from /tmp/agycheck: node --experimental-strip-types test-command.ts
+// Run from the repo root: node --experimental-strip-types test/test-command.ts
+
+// The extension resolves its state file (agy-mode.json) from PI_CODING_AGENT_DIR
+// (via the host's getAgentDir) at import time. Point it at an isolated temp dir
+// BEFORE importing index.ts: CI has no PI_CODING_AGENT_DIR (undefined would
+// crash writeFileSync with 'undefined/agy-mode.json'), and a developer's real
+// ~/.pi/agent must never be touched by these tests.
+{
+	const { mkdtempSync } = await import("node:fs");
+	const { tmpdir } = await import("node:os");
+	const { join } = await import("node:path");
+	process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "agy-mode-test-"));
+}
+
 const mod = await import("../index.ts");
 const factory = mod.default;
 

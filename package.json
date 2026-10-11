@@ -5,6 +5,10 @@
 	"keywords": ["pi-package", "pi", "antigravity", "agy", "gemini"],
 	"license": "ISC",
 	"type": "module",
+	"files": [
+		"*.ts",
+		"test/"
+	],
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/ahati/pi-agy-mode.git"

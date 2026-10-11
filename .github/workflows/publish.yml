@@ -5,7 +5,7 @@ name: Publish
 #
 # Authentication is OIDC (npm trusted publishing) — no NPM_TOKEN secret.
 # Requires a trusted publisher configured on npmjs.com for this repo with the
-# workflow filename "publish.yml" (see README > Publishing).
+# workflow filename "publish.yml".
 
 on:
   push:
